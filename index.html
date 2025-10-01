@@ -151,7 +151,7 @@
     <div id="rulesHeader">📜 點我展開 / 收合規則說明</div>
     <div id="rulesContent">
       <ul>
-        <li>每次投擲兩個 <b>100 面骰子</b>，各自取結果 <code>√(骰子值)</code> 的整數部分 (最大 9)，決定十位數與個位數。</li>
+        <li>每次投擲兩個 <b>10 面骰子</b> (0~9)，分別決定十位數與個位數。</li>
         <li>音量 = 十位數 × 10 + 個位數，範圍 0 ~ 99。</li>
         <li>當十位數與個位數同時為 <b>9</b>，音量變成 <b>99</b>，進入「猜拳挑戰」。</li>
         <li>猜拳結果：
@@ -183,9 +183,9 @@
     let currentVolume = 0;
     let inRpsMode = false;
 
+    // 🎲 均勻隨機版本 (0~9 等機率)
     function rollDigit() {
-      let r = Math.floor(Math.random() * 100) + 1;
-      return Math.min(9, Math.floor(Math.sqrt(r)));
+      return Math.floor(Math.random() * 10);
     }
 
     function updateVolume(newVolume) {
