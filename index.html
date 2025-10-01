@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>音量賭鬼</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f4f4;
+      text-align: center;
+      padding: 40px;
+      overflow-x: hidden;
+    }
+    button {
+      margin: 10px;
+      padding: 10px 20px;
+      font-size: 16px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    #rollBtn { background: #0078d7; color: #fff; }
+    .rps {
+      background: #ff9800;
+      color: #fff;
+      display: none;
+    }
+    /* 音量條 */
+    #volumeBar {
+      width: 80%;
+      height: 25px;
+      margin: 20px auto;
+      background: #ddd;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    #volumeFill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #4caf50, #81c784);
+      transition: width 0.5s ease;
+    }
+    #volumeLabel {
+      margin-top: 10px;
+      font-size: 18px;
+      font-weight: bold;
+    }
+    /* 骰子區塊 */
+    #diceContainer {
+      display: flex;
+      justify-content: center;
+      margin: 20px;
+      gap: 20px;
+    }
+    .dice {
+      width: 60px;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      font-weight: bold;
+      background: #fff;
+      border: 2px solid #333;
+      border-radius: 10px;
+      box-shadow: 2px 2px 6px rgba(0,0,0,0.2);
+    }
+    .rolling {
+      animation: spin 0.1s infinite linear;
+    }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
+    }
+    /* 規則說明 (可收合) */
+    #rulesContainer {
+      margin-top: 30px;
+      max-width: 600px;
+      margin-left: auto;
+      margin-right: auto;
+      text-align: left;
+    }
+    #rulesHeader {
+      background: #0078d7;
+      color: white;
+      padding: 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      user-select: none;
+      text-align: center;
+    }
+    #rulesContent {
+      display: none;
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 0 0 10px 10px;
+      padding: 15px;
+    }
+    #rulesContent ul {
+      padding-left: 20px;
+    }
+    /* 猜拳結果 */
+    #rpsResult {
+      margin-top: 20px;
+      font-size: 18px;
+      font-weight: bold;
+      color: #333;
+      min-height: 30px;
+    }
+    /* 煙火 canvas */
+    #fireworksCanvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 9999;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- YouTube 播放器 -->
+  <div style="margin: 20px auto; max-width: 560px;">
+    <div id="player"></div>
+  </div>
+
+  <button id="rollBtn">投骰子以決定音量</button>
+  <div id="rpsBtns">
+    <button class="rps" data-choice="rock">✊ 石頭</button>
+    <button class="rps" data-choice="paper">🖐️ 布</button>
+    <button class="rps" data-choice="scissors">✌️ 剪刀</button>
+  </div>
+
+  <!-- 骰子動畫區 -->
+  <div id="diceContainer">
+    <div id="dice1" class="dice">?</div>
+    <div id="dice2" class="dice">?</div>
+  </div>
+
+  <!-- 音量條 -->
+  <div id="volumeBar"><div id="volumeFill"></div></div>
+  <div id="volumeLabel">音量: 0</div>
+
+  <!-- 猜拳結果區 -->
+  <div id="rpsResult"></div>
+
+  <!-- 規則說明 -->
+  <div id="rulesContainer">
+    <div id="rulesHeader">📜 點我展開 / 收合規則說明</div>
+    <div id="rulesContent">
+      <ul>
+        <li>每次投擲兩個 <b>100 面骰子</b>，各自取結果 <code>√(骰子值)</code> 的整數部分 (最大 9)，決定十位數與個位數。</li>
+        <li>音量 = 十位數 × 10 + 個位數，範圍 0 ~ 99。</li>
+        <li>當十位數與個位數同時為 <b>9</b>，音量變成 <b>99</b>，進入「猜拳挑戰」。</li>
+        <li>猜拳結果：
+          <ul>
+            <li><b>贏</b>：有 50% 機率音量跳到 <b>100</b>，50% 機率歸零。</li>
+            <li><b>平手或輸</b>：音量維持在 99。</li>
+          </ul>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 煙火 Canvas -->
+  <canvas id="fireworksCanvas"></canvas>
+
+  <!-- YouTube API -->
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script>
+    let player;
+    function onYouTubeIframeAPIReady() {
+      player = new YT.Player('player', {
+        height: '315',
+        width: '560',
+        videoId: 'YQZEoZ4W0ac', // ✅ 換成你想要的影片 ID
+        playerVars: { autoplay: 1, mute: 1, loop: 1, playlist: 'YQZEoZ4W0ac' }
+      });
+    }
+
+    let currentVolume = 0;
+    let inRpsMode = false;
+
+    function rollDigit() {
+      let r = Math.floor(Math.random() * 100) + 1;
+      return Math.min(9, Math.floor(Math.sqrt(r)));
+    }
+
+    function updateVolume(newVolume) {
+      currentVolume = Math.max(0, Math.min(100, newVolume));
+      document.getElementById("volumeFill").style.width = currentVolume + "%";
+      document.getElementById("volumeLabel").textContent = "音量: " + currentVolume;
+
+      if (player && player.setVolume) {
+        player.unMute();
+        player.setVolume(currentVolume);
+      }
+
+      // 🎆 當音量=100 且為勝利時觸發煙火
+      if (currentVolume === 100) {
+        startFireworks();
+      }
+    }
+
+    function rockPaperScissors(playerChoice) {
+      const choices = ["rock", "paper", "scissors"];
+      const systemChoice = choices[Math.floor(Math.random() * 3)];
+      let result;
+      if (playerChoice === systemChoice) result = "draw";
+      else if (
+        (playerChoice === "rock" && systemChoice === "scissors") ||
+        (playerChoice === "scissors" && systemChoice === "paper") ||
+        (playerChoice === "paper" && systemChoice === "rock")
+      ) result = "win";
+      else result = "lose";
+      return { result, systemChoice };
+    }
+
+    const rollBtn = document.getElementById("rollBtn");
+    const rpsBtns = document.querySelectorAll(".rps");
+    const dice1 = document.getElementById("dice1");
+    const dice2 = document.getElementById("dice2");
+    const rpsResult = document.getElementById("rpsResult");
+
+    function animateDice(callback) {
+      dice1.classList.add("rolling");
+      dice2.classList.add("rolling");
+
+      let rollInterval = setInterval(() => {
+        dice1.textContent = Math.floor(Math.random() * 10);
+        dice2.textContent = Math.floor(Math.random() * 10);
+      }, 100);
+
+      setTimeout(() => {
+        clearInterval(rollInterval);
+        dice1.classList.remove("rolling");
+        dice2.classList.remove("rolling");
+
+        let ten = rollDigit();
+        let one = rollDigit();
+        dice1.textContent = ten;
+        dice2.textContent = one;
+
+        callback(ten, one);
+      }, 1500);
+    }
+
+    rollBtn.addEventListener("click", () => {
+      if (inRpsMode) return;
+      rpsResult.textContent = ""; // 清空結果
+
+      animateDice((ten, one) => {
+        let volume = ten * 10 + one;
+        if (ten === 9 && one === 9) {
+          inRpsMode = true;
+          rpsBtns.forEach(btn => btn.style.display = "inline-block");
+          updateVolume(99);
+        } else {
+          updateVolume(volume);
+        }
+      });
+    });
+
+    rpsBtns.forEach(btn => {
+      btn.addEventListener("click", () => {
+        const playerChoice = btn.dataset.choice;
+        const { result, systemChoice } = rockPaperScissors(playerChoice);
+        let icons = { rock: "✊", paper: "🖐️", scissors: "✌️" };
+        let msg = `你出 ${icons[playerChoice]}，電腦出 ${icons[systemChoice]} → `;
+        if (result === "win") msg += "🎉 你贏了！";
+        else if (result === "lose") msg += "😢 你輸了！";
+        else msg += "🤝 平手！";
+        rpsResult.textContent = msg;
+
+        if (result === "win") {
+          if (Math.random() < 0.5) updateVolume(100); // 這裡會觸發煙火
+          else updateVolume(0);
+        } else {
+          updateVolume(99);
+        }
+        inRpsMode = false;
+        rpsBtns.forEach(btn => btn.style.display = "none");
+      });
+    });
+
+    // 收合規則
+    const rulesHeader = document.getElementById("rulesHeader");
+    const rulesContent = document.getElementById("rulesContent");
+    rulesHeader.addEventListener("click", () => {
+      rulesContent.style.display = (rulesContent.style.display === "block") ? "none" : "block";
+    });
+
+    updateVolume(0);
+
+    // 🎆 煙火效果
+    const canvas = document.getElementById("fireworksCanvas");
+    const ctx = canvas.getContext("2d");
+    let fireworks = [];
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener("resize", resizeCanvas);
+    resizeCanvas();
+
+    function Firework(x, y, color) {
+      this.x = x;
+      this.y = y;
+      this.particles = [];
+      for (let i = 0; i < 50; i++) {
+        this.particles.push({
+          x: x, y: y,
+          dx: (Math.random() - 0.5) * 5,
+          dy: (Math.random() - 0.5) * 5,
+          life: 100,
+          color: color
+        });
+      }
+    }
+
+    function startFireworks() {
+      for (let i = 0; i < 5; i++) {
+        fireworks.push(new Firework(Math.random() * canvas.width, Math.random() * canvas.height / 2, randomColor()));
+      }
+      if (!animating) animateFireworks();
+    }
+
+    function randomColor() {
+      const colors = ["#ff3838", "#ff9f1a", "#32ff7e", "#7efff5", "#18dcff", "#7d5fff", "#e84393"];
+      return colors[Math.floor(Math.random() * colors.length)];
+    }
+
+    let animating = false;
+    function animateFireworks() {
+      animating = true;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      fireworks.forEach((fw, fwIndex) => {
+        fw.particles.forEach((p, index) => {
+          p.x += p.dx;
+          p.y += p.dy;
+          p.dy += 0.05;
+          p.life--;
+          ctx.fillStyle = p.color;
+          ctx.fillRect(p.x, p.y, 2, 2);
+          if (p.life <= 0) fw.particles.splice(index, 1);
+        });
+        if (fw.particles.length === 0) fireworks.splice(fwIndex, 1);
+      });
+      if (fireworks.length > 0) {
+        requestAnimationFrame(animateFireworks);
+      } else {
+        animating = false;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+    }
+  </script>
+</body>
+</html>
